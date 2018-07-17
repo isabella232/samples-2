@@ -21,6 +21,58 @@ let startTime;
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
 
+class StreamMixerService {
+  constructor() {
+    const AudioContextConstructor =
+      window.AudioContext || window.webkitAudioContext;
+
+    this.audioContext = new AudioContextConstructor();
+    this.audioSources = new Map();
+    this.audioDestination = this.audioContext.createMediaStreamDestination();
+  }
+
+  addAudioTrack(track) {
+    const stream = new MediaStream([track]);
+    const audioSource = this.audioContext.createMediaStreamSource(stream);
+
+    this.audioSources.set(track.id, audioSource);
+
+    if (this.destinationStream) {
+      audioSource.connect(this.audioDestination);
+    }
+  }
+
+  removeAudioTrack(track) {
+    this.removeAudioTrackById(track.id);
+  }
+
+  removeAudioTrackById(trackId) {
+    const audioSource = this.audioSources.get(trackId);
+
+    if (audioSource) {
+      audioSource.disconnect(this.audioDestination);
+
+      this.audioSources.delete(trackId);
+    }
+  }
+
+  getMixedStream() {
+    if (this.destinationStream) {
+      return this.destinationStream;
+    }
+
+    this.audioSources.forEach(audioSource =>
+      audioSource.connect(this.audioDestination)
+    );
+
+    const destinationStream = this.audioDestination.stream;
+
+    this.destinationStream = destinationStream;
+
+    return destinationStream;
+  }
+}
+
 localVideo.addEventListener('loadedmetadata', function() {
   trace(`Local video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
 });
@@ -58,8 +110,13 @@ function getOtherPc(pc) {
 
 function gotStream(stream) {
   trace('Received local stream');
-  localVideo.srcObject = stream;
-  localStream = stream;
+  const streamMixer = new StreamMixerService();
+  streamMixer.addAudioTrack(stream.getAudioTracks()[0]);
+  const mixedStream = streamMixer.getMixedStream();
+  mixedStream.addTrack(stream.getVideoTracks()[0]);
+
+  localVideo.srcObject = mixedStream;
+  localStream = mixedStream;
   callButton.disabled = false;
 }
 
